@@ -14,6 +14,7 @@
 | M5 浓度复算 | 运行浓度复算并核对证据 | `POST /api/5` | `app/modules/m5_concentration/rules.py` | `tests/test_concentration.py` |
 | M6 质控判定 | 运行质控判定并核对证据 | `POST /api/6` | `app/modules/m6_quality/rules.py` | `tests/test_quality.py` |
 | M7 结果复核 | 运行结果复核并核对证据 | `POST /api/7` | `app/modules/m7_review/rules.py` | `tests/test_review.py` |
+| 标样版本绑定 | 补齐标样后复核新旧标曲归属 | `POST /api/run`（parent_id） | `app/versions.py`、`app/store.py` | `tests/test_versions.py` |
 
 ## 陷阱登记
 
@@ -27,6 +28,9 @@
 | TRAP-14 | 业务键冲突 | 静默采信错误值 | 保留首条并隔离冲突 | `app/modules/m1_intake/rules.py` | `tests/test_intake.py::test_intake_conflicting_key` |
 | TRAP-15 | 单位混合 | 静默采信错误值 | 浓度单位归一 | `app/modules/m2_internal/rules.py` | `tests/test_internal.py::test_internal_units` |
 | TRAP-19 | 多个质控标记 | 静默采信错误值 | 显式优先级 | `app/modules/m6_quality/rules.py` | `tests/test_quality.py::test_quality_priority` |
+| TRAP-20 | 补齐标样后整批重拟合 | 改写已复核样品的结果 | 标曲版本化+样品级绑定，冻结已复核样品 | `app/modules/m3_curve/rules.py`、`app/modules/m4_blank/rules.py` | `tests/test_versions.py::test_supplement_only_takes_pending_samples` |
+| TRAP-21 | 重试同一次标样修订 | 重复累积版本号 | 按 standards_digest 复用版本 | `app/modules/m3_curve/rules.py` | `tests/test_versions.py::test_replay_same_revision_keeps_one_version` |
+| TRAP-22 | 曲线更新失败 | 新结果失去依据或旧版被覆盖 | 保留旧版本并记 update_failed | `app/modules/m3_curve/rules.py` | `tests/test_versions.py::test_failed_curve_update_retains_old_version` |
 
 ## 对账规则
 

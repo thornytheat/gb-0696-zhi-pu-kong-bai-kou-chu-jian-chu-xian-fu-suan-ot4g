@@ -1,1 +1,137 @@
-{% extends "base.html" %}{% block content %}<div class="kpis">{% for label,value in run.result.balance.items() %}<div class="kpi"><span>{{ {'input':'输入记录','accepted':'采信记录','quarantined':'隔离记录','blank':'空行'}[label] }}</span><strong>{{ value }}</strong></div>{% endfor %}<div class="kpi conclusion"><span>批次状态</span><strong>{{ '阻断' if run.result.blocked else '待复核' }}</strong></div></div><div class="grid"><section class="panel results"><div class="panel-head"><h2>响应证据</h2><span>{{ report.rows|length }} 条</span></div><div class="table-wrap"><table class="ledger"><thead><tr>{% if report.rows %}{% for key in report.rows[0] %}{% if key not in ['raw','level_value','dilution_value'] %}<th>{{ {"sample_id":"样品编号","kind":"类型","analyte":"检测项","area":"峰面积","internal_area":"内标峰面积","level":"标示浓度","dilution":"稀释倍数","unit":"单位","batch":"批次","line":"来源行","response":"响应比","slope":"斜率","intercept":"截距","r2":"拟合优度","max_response":"最大响应","net":"净浓度","concentration":"浓度","lod":"检出限","status":"原因码","qualifier":"限定符"}.get(key,key) }}</th>{% endif %}{% endfor %}{% endif %}</tr></thead><tbody>{% for row in report.rows %}<tr>{% for key,value in row.items() %}{% if key not in ['raw','level_value','dilution_value'] %}<td class="{{ 'num' if key in ['line','area','response','net','concentration','lod'] else '' }}" title="{{ value }}">{{ value }}</td>{% endif %}{% endfor %}</tr>{% else %}<tr><td>选择样例后运行。</td></tr>{% endfor %}</tbody></table></div></section><section class="panel assay"><div class="panel-head"><h2>样品浓度</h2><span>{{run.result.quality[:12]|length}} / {{ run.result.quality|length }} 样品</span></div><div class="plot">{% for row in run.result.quality[:12] %}<div class="bar-row"><span>{{ row.sample_id }}</span><i class="concentration-bar" data-value="{{ row.concentration }}"></i><b>{{ row.concentration }} ug/L</b><em>{{ row.status }} · LOD {{ row.lod }}</em></div>{% endfor %}</div><div class="threshold">绝对值上限 <strong id="plot-max"></strong></div></section><section class="panel input"><div class="panel-head"><h2>输入批次</h2><span>CSV</span></div><form id="run-form"><label>仪器文件<input id="file" type="file" accept=".csv"></label><textarea id="text" rows="4" aria-label="CSV内容" placeholder="粘贴仪器数据"></textarea><div class="actions"><button class="btn" type="button" id="sample">载入样例</button><button class="btn primary" type="submit">运行复算</button></div><output id="feedback" role="status">{{ run.created }}</output></form></section><section class="panel quarantine"><div class="panel-head"><h2>隔离原因</h2><span>{{ run.result.quarantine|length }} 条</span></div><div class="reason-list">{% for reason,count in run.result.reasons.items() %}<div><span class="sev severe">{{ reason }}</span><b>{{ count }}</b></div>{% endfor %}</div><div class="review"><button class="btn" data-review="退回">退回</button><button class="btn" data-review="通过">通过</button><span>版本 {{ run.revision }}</span></div></section></div><script type="application/json" id="run-state">{{ {'id':run.id,'revision':run.revision}|tojson }}</script>{% endblock %}
+{% extends "base.html" %}
+{% block content %}
+{% set metrics = report.metrics %}
+{% set summary = run.result.review_summary or {} %}
+<div class="kpis">
+  {% for label,value in run.result.balance.items() %}
+  <div class="kpi"><span>{{ {'input':'输入记录','accepted':'采信记录','quarantined':'隔离记录','blank':'空行'}[label] }}</span><strong>{{ value }}</strong></div>
+  {% endfor %}
+  <div class="kpi conclusion"><span>批次结论</span><strong>{{ '阻断' if run.result.blocked else '可复核' }}</strong></div>
+  <div class="kpi"><span>待复核 / 已复核 / 冻结</span><strong>{{ summary.get('pending', metrics.get('待复核', 0)) }} / {{ summary.get('reviewed', 0) }} / {{ summary.get('frozen', metrics.get('冻结', 0)) }}</strong></div>
+</div>
+
+<div class="grid">
+  <section class="panel results">
+    <div class="panel-head"><h2>结果与标曲归属</h2><span>{{ report.rows|length }} 条</span></div>
+    <div class="table-wrap">
+      {% if active == 7 %}
+      <table class="ledger">
+        <thead><tr>
+          <th>选择</th><th>样品编号</th><th>类型</th><th>检测项</th><th>批次</th><th>来源行</th>
+          <th>峰面积</th><th>响应比</th><th>净浓度</th><th>浓度</th><th>检出限</th>
+          <th>原因码</th><th>限定符</th><th>标曲版本</th><th>标样摘要</th><th>复核结论</th>
+        </tr></thead>
+        <tbody>
+        {% for row in report.rows %}
+          {% set key = row.batch ~ '|' ~ row.analyte ~ '|' ~ row.sample_id %}
+          {% set review = run.result.sample_decisions.get(key) or {} %}
+          {% set decision = review.get('decision') or row.get('decision', '待复核') %}
+          {% set pending = decision == '待复核' %}
+          <tr class="{{ 'frozen-row' if row.get('frozen') else '' }}">
+            <td>{% if pending %}<input type="checkbox" class="pick" value="{{ key }}">{% endif %}</td>
+            <td>{{ row.get('sample_id', '') }}</td>
+            <td>{{ row.get('kind', '') }}</td>
+            <td>{{ row.get('analyte', '') }}</td>
+            <td>{{ row.get('batch', '') }}</td>
+            <td class="num">{{ row.get('line', '') }}</td>
+            <td class="num">{{ row.get('area', '') }}</td>
+            <td class="num">{{ row.get('response', '') }}</td>
+            <td class="num">{{ row.get('net', '') }}</td>
+            <td class="num">{{ row.get('concentration', '') }}</td>
+            <td class="num">{{ row.get('lod', '') }}</td>
+            <td>{{ row.get('status', '') }}</td>
+            <td>{{ row.get('qualifier', '') }}</td>
+            <td title="{{ row.get('curve_id', '') }}">{{ row.get('curve_id', '') }}{% if row.get('frozen') %} · 冻结{% endif %}</td>
+            <td title="{{ row.get('standards_digest', '') }}">{{ row.get('standards_digest', '')[:10] }}</td>
+            <td>{{ decision }}{% if row.get('reviewed_with') %} · 原标曲 {{ row.reviewed_with }}{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="16">选择样例后运行。</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <table class="ledger">
+        <thead><tr>
+        {% if report.rows %}{% for key in report.rows[0] %}{% if key not in ['raw','level_value','dilution_value'] %}<th>{{ {"sample_id":"样品编号","kind":"类型","analyte":"检测项","area":"峰面积","internal_area":"内标峰面积","level":"标示浓度","dilution":"稀释倍数","unit":"单位","batch":"批次","line":"来源行","response":"响应比","slope":"斜率","intercept":"截距","r2":"拟合优度","max_response":"最大响应","version":"版本","standard_version":"标曲版本","standards_digest":"标样摘要","standard_points":"标样点","curve_id":"标曲编号","created_run":"建立批次","net":"净浓度","blank_value":"空白浓度","curve_slope":"标曲斜率","curve_intercept":"标曲截距","curve_r2":"标曲R²","curve_max_response":"标曲最大响应","concentration":"浓度","lod":"检出限","status":"原因码","qualifier":"限定符"}.get(key,key) }}</th>{% endif %}{% endfor %}{% endif %}
+        </tr></thead>
+        <tbody>
+        {% for row in report.rows %}<tr>{% for key,value in row.items() %}{% if key not in ['raw','level_value','dilution_value'] %}<td class="{{ 'num' if key in ['line','area','response','net','concentration','lod','blank_value','curve_slope','curve_intercept','curve_r2','curve_max_response'] else '' }}" title="{{ value }}">{{ value }}</td>{% endif %}{% endfor %}</tr>
+        {% else %}<tr><td>选择样例后运行。</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel assay">
+    <div class="panel-head"><h2>样品浓度</h2><span>{{ run.result.quality[:12]|length }} / {{ run.result.quality|length }} 待复核</span></div>
+    <div class="plot">
+      {% for row in run.result.quality[:12] %}
+      <div class="bar-row"><span>{{ row.sample_id }}</span><i class="concentration-bar" data-value="{{ row.concentration }}"></i><b>{{ row.concentration }} ug/L</b><em>{{ row.status }} · LOD {{ row.lod }}</em></div>
+      {% endfor %}
+    </div>
+    <div class="threshold">绝对值上限 <strong id="plot-max"></strong></div>
+  </section>
+
+  <section class="panel input">
+    <div class="panel-head"><h2>输入批次</h2><span>CSV</span></div>
+    <form id="run-form">
+      <label>仪器文件<input id="file" type="file" accept=".csv"></label>
+      <textarea id="text" rows="4" aria-label="CSV内容" placeholder="粘贴仪器数据"></textarea>
+      <label>上级批次（补齐标样时填写）<input id="parent-id" type="text" placeholder="留空为独立批次" value="{{ run.parent_id or '' }}"></label>
+      <div class="actions">
+        <button class="btn" type="button" id="sample">载入样例</button>
+        <button class="btn" type="button" id="supplement">以本批次补齐</button>
+        <button class="btn primary" type="submit">运行复算</button>
+      </div>
+      <output id="feedback" role="status">{{ run.created }}</output>
+    </form>
+  </section>
+
+  <section class="panel quarantine">
+    <div class="panel-head"><h2>隔离原因</h2><span>{{ run.result.quarantine|length }} 条</span></div>
+    <div class="reason-list">
+      {% for reason,count in run.result.reasons.items() %}<div><span class="sev severe">{{ reason }}</span><b>{{ count }}</b></div>{% endfor %}
+    </div>
+    <div class="review">
+      {% if active == 7 %}
+      <button class="btn" data-review="退回">退回整批</button>
+      <button class="btn" data-review="通过">通过整批</button>
+      <button class="btn" data-review="通过" data-selected="1">通过选中</button>
+      <button class="btn" data-review="退回" data-selected="1">退回选中</button>
+      {% endif %}
+      <span>版本 {{ run.revision }}</span>
+    </div>
+  </section>
+
+  <section class="panel curves">
+    <div class="panel-head"><h2>标曲版本归属</h2><span>{{ run.result.curve_registry|length }} 个版本</span></div>
+    <div class="table-wrap">
+      <table class="ledger">
+        <thead><tr><th>检测项</th><th>标曲</th><th>版本</th><th>标样点</th><th>斜率</th><th>截距</th><th>R²</th><th>标样摘要</th><th>绑定样品</th></tr></thead>
+        <tbody>
+        {% for c in run.result.curve_registry %}
+          {% set bound = run.result.final | selectattr('curve_id', 'equalto', c.curve_id) | list %}
+          <tr class="{{ 'current-curve' if c.curve_id in run.result.curves.values() | map(attribute='curve_id') | list else '' }}">
+            <td>{{ c.batch }} / {{ c.analyte }}</td><td>{{ c.curve_id }}</td><td>v{{ c.version }}</td><td class="num">{{ c.standard_points }}</td><td class="num">{{ c.slope }}</td><td class="num">{{ c.intercept }}</td><td class="num">{{ c.r2 }}</td><td title="{{ c.standards_digest }}">{{ (c.standards_digest or '')[:10] }}</td>
+            <td>{{ bound|selectattr('frozen')|list|length }} 冻结 · {{ bound|rejectattr('frozen')|list|length }} 待复核</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="9">无标曲版本。</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="reason-list events">
+      {% for e in run.result.curve_events %}
+      <div>
+        <span class="sev {{ 'severe' if e.status == 'update_failed' else '' }}">{{ e.batch }} / {{ e.analyte }} · {{ {'first_version':'首版','new_version':'新版本','unchanged':'无变化','reused':'复用旧版','inherited':'沿用上级版本','update_failed':'更新失败，保留旧版'}.get(e.status, e.status) }}</span>
+        <b>{% if e.from_version %}v{{ e.from_version }}{% else %}—{% endif %} → {% if e.to_version %}v{{ e.to_version }}{% else %}—{% endif %}</b>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+<script type="application/json" id="run-state">{{ {'id':run.id,'revision':run.revision,'parent_id':run.parent_id}|tojson }}</script>
+{% endblock %}

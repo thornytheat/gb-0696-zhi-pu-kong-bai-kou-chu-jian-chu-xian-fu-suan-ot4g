@@ -1,12 +1,18 @@
 from collections import Counter
 from decimal import Decimal
 
+def _plain_key(key):
+    if isinstance(key, tuple):
+        return "|".join(str(part) for part in key)
+    return str(key)
+
+
 def plain(value):
     if isinstance(value, Decimal):
         return str(value)
     if isinstance(value, dict):
-        return {str(k):plain(v) for k,v in value.items()}
-    if isinstance(value, (list,tuple)):
+        return {_plain_key(k): plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
         return [plain(v) for v in value]
     return value
 
